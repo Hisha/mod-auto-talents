@@ -5,27 +5,57 @@
 #include "DatabaseEnv.h"
 #include "Log.h"
 #include "Player.h"
+#include "SpellInfo.h"
+#include "SpellMgr.h"
 
 #include <algorithm>
+#include <cctype>
 #include <map>
+#include <string>
 #include <unordered_map>
 
 namespace
 {
 using TalentRankMap = std::unordered_map<uint32, uint8>;
 
-TalentEntry const* ResolveTalentReference(uint32& talentReference)
+std::string NormalizeTalentName(std::string const& value)
 {
-    // Preferred form: a Talent.dbc TalentID.
-    if (TalentEntry const* talentInfo = sTalentStore.LookupEntry(talentReference))
-        return talentInfo;
+    std::string normalized;
+    normalized.reserve(value.size());
 
-    // Convenience form used by the built-in SQL: any spell rank belonging to
-    // the talent.  Normalize it to the Talent.dbc TalentID in memory.
-    if (TalentSpellPos const* position = GetTalentSpellPos(talentReference))
+    for (unsigned char c : value)
     {
-        talentReference = position->talent_id;
-        return sTalentStore.LookupEntry(talentReference);
+        if (std::isalnum(c))
+            normalized.push_back(static_cast<char>(std::tolower(c)));
+    }
+
+    return normalized;
+}
+
+TalentEntry const* ResolveTalentName(std::string const& talentName, uint8 classId, uint32& talentId)
+{
+    std::string wanted = NormalizeTalentName(talentName);
+
+    for (uint32 id = 0; id < sTalentStore.GetNumRows(); ++id)
+    {
+        TalentEntry const* talentInfo = sTalentStore.LookupEntry(id);
+        if (!talentInfo || !talentInfo->RankID[0])
+            continue;
+
+        TalentTabEntry const* talentTab = sTalentTabStore.LookupEntry(talentInfo->TalentTab);
+        if (!talentTab || classId == 0 || classId >= MAX_CLASSES ||
+            !(talentTab->ClassMask & (1u << (classId - 1))))
+            continue;
+
+        SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(talentInfo->RankID[0]);
+        if (!spellInfo || !spellInfo->SpellName[0])
+            continue;
+
+        if (NormalizeTalentName(spellInfo->SpellName[0]) == wanted)
+        {
+            talentId = id;
+            return talentInfo;
+        }
     }
 
     return nullptr;
@@ -146,7 +176,7 @@ void AutoTalentMgr::LoadBuilds()
     } while (buildResult->NextRow());
 
     QueryResult stepResult = WorldDatabase.Query(
-        "SELECT `build_id`, `sequence`, `talent_id`, `rank` "
+        "SELECT `build_id`, `sequence`, `talent_name`, `rank` "
         "FROM `auto_talent_build_step` ORDER BY `build_id`, `sequence`");
 
     if (stepResult)
@@ -165,7 +195,7 @@ void AutoTalentMgr::LoadBuilds()
 
             AutoTalentBuildStep step;
             step.Sequence = fields[1].Get<uint16>();
-            step.TalentId = fields[2].Get<uint32>();
+            step.TalentName = fields[2].Get<std::string>();
             step.Rank = fields[3].Get<uint8>();
             itr->second.Steps.push_back(step);
         } while (stepResult->NextRow());
@@ -193,12 +223,11 @@ void AutoTalentMgr::LoadBuilds()
                 break;
             }
 
-            uint32 originalReference = step.TalentId;
-            TalentEntry const* talentInfo = ResolveTalentReference(step.TalentId);
+            TalentEntry const* talentInfo = ResolveTalentName(step.TalentName, build.ClassId, step.TalentId);
             if (!talentInfo)
             {
-                LOG_ERROR("module", "AutoTalents: disabling build '{}' ({}): step {} references unknown talent/spell {}.",
-                    build.Name, build.Id, step.Sequence, originalReference);
+                LOG_ERROR("module", "AutoTalents: disabling build '{}' ({}): step {} references unknown talent name '{}'.",
+                    build.Name, build.Id, step.Sequence, step.TalentName);
                 valid = false;
                 break;
             }

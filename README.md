@@ -1,80 +1,39 @@
 # mod-auto-talents
 
-Server-side automatic talent leveling for AzerothCore 3.3.5a.
+Server-side automatic talent leveling for AzerothCore WotLK 3.3.5a.
 
-## Current scope
-
-Players choose a server-provided build for each native talent spec slot. When the player logs in, gains a level, changes active dual-spec slot, or changes the assignment for the active slot, the module reconciles the active talent tree to the selected build through the number of talent points currently available.
-
-The module does not require a client addon. Build definitions and their exact one-point-at-a-time order live in the world database.
-
-## Built-in test builds
-
-The first complete data set is Paladin:
-
-- `201` - Protection (`0/53/18` at level 80)
-- `202` - Retribution (`0/16/55` at level 80)
-
-These are intended as useful leveling builds and, more importantly, to prove the complete automatic progression engine before adding the remaining classes/specs.
+Players select a predefined build for either native dual-talent slot. The active slot is reconciled automatically on login, level-up, spec change, or when assigning a build to the currently active slot. No client addon is required.
 
 ## Commands
 
-```text
-.autotalent list
-.autotalent status
-.autotalent set <1|2> <buildId>
-.autotalent clear <1|2>
-```
+- `.autotalent list`
+- `.autotalent status`
+- `.autotalent set <1|2> <buildId>`
+- `.autotalent clear <1|2>`
 
-Examples:
+## Built-in build IDs
 
-```text
-.autotalent set 1 202
-.autotalent set 2 201
-```
+| Class | Builds |
+|---|---|
+| Warrior | 101 Arms, 102 Fury, 103 Protection |
+| Paladin | 201 Protection, 202 Retribution, 203 Holy |
+| Hunter | 301 Beast Mastery, 302 Marksmanship, 303 Survival |
+| Rogue | 401 Assassination, 402 Combat, 403 Subtlety |
+| Priest | 501 Discipline, 502 Holy, 503 Shadow |
+| Death Knight | 601 Blood, 602 Frost, 603 Unholy |
+| Shaman | 701 Elemental, 702 Enhancement, 703 Restoration |
+| Mage | 801 Arcane, 802 Fire, 803 Frost |
+| Warlock | 901 Affliction, 902 Demonology, 903 Destruction |
+| Druid | 1101 Balance, 1102 Feral, 1103 Restoration |
 
-If the assigned slot is active, `set` reconciles immediately. An inactive dual-spec slot is left untouched until it becomes active.
+The v0.3 library uses leveling-oriented WotLK Classic progression, with Icy Veins leveling guides used as the primary reference for leveling priorities and the 3.3.5 talent-tree structure used to keep the data server-valid.
 
-## Reconciliation behavior
+## Build data
 
-The same reconciliation operation is used for login, level-up, active spec change, and active assignment change.
+Build definitions live in the world database. `auto_talent_build_step` stores a talent name and human-readable rank for each ordered point. At startup the module resolves each name against AzerothCore's loaded 3.3.5 talent/spell data and disables a build if a referenced talent is unknown or belongs to the wrong class.
 
-- If the current active tree exactly matches the scripted prefix, only newly available points are learned.
-- If the active tree does not match the selected scripted prefix, that active spec is reset for free and rebuilt through the current available talent-point count.
-- Only the active native dual-spec slot is ever modified.
-- AzerothCore's normal `LearnTalent()` path applies each point, so normal class, prerequisite, tier, rank, and free-point checks remain authoritative.
+This keeps future server/admin editing readable without requiring hard-coded Talent.dbc or spell IDs.
 
-## SQL layout
+## SQL policy
 
-World database:
-
-- `auto_talent_build`
-- `auto_talent_build_step`
-
-Characters database:
-
-- `auto_talent_character`
-
-The shipped SQL files are complete current-state base files. Permanent module SQL uses complete `CREATE` definitions plus `DELETE`/`INSERT` seed maintenance; shipped schema evolution is not represented as a chain of `ALTER` statements.
-
-For build authoring, `auto_talent_build_step.talent_id` accepts either a real `Talent.dbc` TalentID or any spell ID belonging to that talent. Spell references are normalized to the proper TalentID when the server loads the definitions. `rank` is human-readable and 1-based.
-
-## Configuration
-
-```ini
-AutoTalents.Enable = 1
-AutoTalents.Debug = 0
-AutoTalents.LoginMessage = 0
-```
-
-`AutoTalents.Debug = 1` logs validation and actual reconciliation activity. Characters with no assigned build are intentionally not logged, preventing playerbot startup spam.
-
-## Installation / test update
-
-Apply the complete world base SQL after updating this milestone so the two Paladin builds receive their ordered steps:
-
-```bash
-mysql -u root -p acore_world < modules/mod-auto-talents/data/sql/db-world/base/auto_talent_builds.sql
-```
-
-The character schema did not change in this milestone.
+Distributed SQL files contain complete current `CREATE TABLE` definitions and seed data implemented with `DELETE` / `INSERT`. Permanent upgrade chains containing `ALTER TABLE` are intentionally not shipped.

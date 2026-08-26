@@ -12,7 +12,8 @@ class Player;
 struct AutoTalentBuildStep
 {
     uint16 Sequence = 0;
-    uint32 TalentId = 0;
+    std::string TalentName;
+    uint32 TalentId = 0; // Resolved Talent.dbc ID, populated when builds load.
     uint8 Rank = 0; // Human-readable rank: 1..5, not zero-based.
 };
 
