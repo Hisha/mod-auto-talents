@@ -1,10 +1,13 @@
 -- mod-auto-talents
--- World database - complete base schema and initial build definitions.
+-- World database - complete base schema and built-in build definitions.
 --
 -- Long-term shipped SQL policy:
 --   * Complete CREATE TABLE definitions.
 --   * Seed changes use DELETE/INSERT.
---   * No ALTER TABLE migrations are retained in base files.
+--   * Base files always describe the complete current schema.
+--
+-- talent_id accepts either a Talent.dbc TalentID or any spell ID belonging
+-- to that talent. The module normalizes spell references to TalentIDs at load.
 
 CREATE TABLE IF NOT EXISTS `auto_talent_build` (
   `id` INT UNSIGNED NOT NULL,
@@ -29,11 +32,157 @@ CREATE TABLE IF NOT EXISTS `auto_talent_build_step` (
     ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Initial Paladin definitions used to prove selection and dual-spec assignment.
--- Ordered talent steps are intentionally added in the talent-engine milestone.
 DELETE FROM `auto_talent_build_step` WHERE `build_id` IN (201, 202);
 DELETE FROM `auto_talent_build` WHERE `id` IN (201, 202);
 
 INSERT INTO `auto_talent_build` (`id`, `class_id`, `name`, `description`, `enabled`) VALUES
-(201, 2, 'Protection', 'Paladin Protection leveling build', 1),
-(202, 2, 'Retribution', 'Paladin Retribution leveling build', 1);
+(201, 2, 'Protection', 'Paladin Protection leveling build (0/53/18 at level 80)', 1),
+(202, 2, 'Retribution', 'Paladin Retribution leveling build (0/16/55 at level 80)', 1);
+
+-- Build 201: ordered one-point-at-a-time progression.
+INSERT INTO `auto_talent_build_step` (`build_id`, `sequence`, `talent_id`, `rank`) VALUES
+(201, 1, 20262, 1) /* Divine Strength 1 */,
+(201, 2, 20262, 2) /* Divine Strength 2 */,
+(201, 3, 20262, 3) /* Divine Strength 3 */,
+(201, 4, 20262, 4) /* Divine Strength 4 */,
+(201, 5, 20262, 5) /* Divine Strength 5 */,
+(201, 6, 20096, 1) /* Anticipation 1 */,
+(201, 7, 20096, 2) /* Anticipation 2 */,
+(201, 8, 20096, 3) /* Anticipation 3 */,
+(201, 9, 20096, 4) /* Anticipation 4 */,
+(201, 10, 20096, 5) /* Anticipation 5 */,
+(201, 11, 20468, 1) /* Improved Righteous Fury 1 */,
+(201, 12, 20468, 2) /* Improved Righteous Fury 2 */,
+(201, 13, 20468, 3) /* Improved Righteous Fury 3 */,
+(201, 14, 20143, 1) /* Toughness 1 */,
+(201, 15, 20143, 2) /* Toughness 2 */,
+(201, 16, 20143, 3) /* Toughness 3 */,
+(201, 17, 20143, 4) /* Toughness 4 */,
+(201, 18, 20143, 5) /* Toughness 5 */,
+(201, 19, 20138, 1) /* Improved Devotion Aura 1 */,
+(201, 20, 20138, 2) /* Improved Devotion Aura 2 */,
+(201, 21, 20138, 3) /* Improved Devotion Aura 3 */,
+(201, 22, 20911, 1) /* Blessing of Sanctuary 1 */,
+(201, 23, 20177, 1) /* Reckoning 1 */,
+(201, 24, 20177, 2) /* Reckoning 2 */,
+(201, 25, 20177, 3) /* Reckoning 3 */,
+(201, 26, 31848, 1) /* Sacred Duty 1 */,
+(201, 27, 31848, 2) /* Sacred Duty 2 */,
+(201, 28, 20196, 1) /* One-Handed Weapon Specialization 1 */,
+(201, 29, 20196, 2) /* One-Handed Weapon Specialization 2 */,
+(201, 30, 20196, 3) /* One-Handed Weapon Specialization 3 */,
+(201, 31, 31785, 1) /* Spiritual Attunement 1 */,
+(201, 32, 20925, 1) /* Holy Shield 1 */,
+(201, 33, 31850, 1) /* Ardent Defender 1 */,
+(201, 34, 31850, 2) /* Ardent Defender 2 */,
+(201, 35, 31850, 3) /* Ardent Defender 3 */,
+(201, 36, 20127, 1) /* Redoubt 1 */,
+(201, 37, 20127, 2) /* Redoubt 2 */,
+(201, 38, 20127, 3) /* Redoubt 3 */,
+(201, 39, 31858, 1) /* Combat Expertise 1 */,
+(201, 40, 31858, 2) /* Combat Expertise 2 */,
+(201, 41, 31858, 3) /* Combat Expertise 3 */,
+(201, 42, 53590, 1) /* Touched by the Light 1 */,
+(201, 43, 53590, 2) /* Touched by the Light 2 */,
+(201, 44, 53590, 3) /* Touched by the Light 3 */,
+(201, 45, 31935, 1) /* Avenger's Shield 1 */,
+(201, 46, 53583, 1) /* Guarded by the Light 1 */,
+(201, 47, 53583, 2) /* Guarded by the Light 2 */,
+(201, 48, 53709, 1) /* Shield of the Templar 1 */,
+(201, 49, 53709, 2) /* Shield of the Templar 2 */,
+(201, 50, 53709, 3) /* Shield of the Templar 3 */,
+(201, 51, 53695, 1) /* Judgements of the Just 1 */,
+(201, 52, 53695, 2) /* Judgements of the Just 2 */,
+(201, 53, 53595, 1) /* Hammer of the Righteous 1 */,
+(201, 54, 20101, 1) /* Benediction 1 */,
+(201, 55, 20101, 2) /* Benediction 2 */,
+(201, 56, 20101, 3) /* Benediction 3 */,
+(201, 57, 20101, 4) /* Benediction 4 */,
+(201, 58, 20101, 5) /* Benediction 5 */,
+(201, 59, 25956, 1) /* Improved Judgements 1 */,
+(201, 60, 25956, 2) /* Improved Judgements 2 */,
+(201, 61, 20335, 1) /* Heart of the Crusader 1 */,
+(201, 62, 20335, 2) /* Heart of the Crusader 2 */,
+(201, 63, 20335, 3) /* Heart of the Crusader 3 */,
+(201, 64, 20117, 1) /* Conviction 1 */,
+(201, 65, 20117, 2) /* Conviction 2 */,
+(201, 66, 20117, 3) /* Conviction 3 */,
+(201, 67, 20117, 4) /* Conviction 4 */,
+(201, 68, 20117, 5) /* Conviction 5 */,
+(201, 69, 20375, 1) /* Seal of Command 1 */,
+(201, 70, 26022, 1) /* Pursuit of Justice 1 */,
+(201, 71, 26022, 2) /* Pursuit of Justice 2 */;
+
+-- Build 202: ordered one-point-at-a-time progression.
+INSERT INTO `auto_talent_build_step` (`build_id`, `sequence`, `talent_id`, `rank`) VALUES
+(202, 1, 20101, 1) /* Benediction 1 */,
+(202, 2, 20101, 2) /* Benediction 2 */,
+(202, 3, 20101, 3) /* Benediction 3 */,
+(202, 4, 20101, 4) /* Benediction 4 */,
+(202, 5, 20101, 5) /* Benediction 5 */,
+(202, 6, 25956, 1) /* Improved Judgements 1 */,
+(202, 7, 25956, 2) /* Improved Judgements 2 */,
+(202, 8, 20335, 1) /* Heart of the Crusader 1 */,
+(202, 9, 20335, 2) /* Heart of the Crusader 2 */,
+(202, 10, 20335, 3) /* Heart of the Crusader 3 */,
+(202, 11, 20117, 1) /* Conviction 1 */,
+(202, 12, 20117, 2) /* Conviction 2 */,
+(202, 13, 20117, 3) /* Conviction 3 */,
+(202, 14, 20117, 4) /* Conviction 4 */,
+(202, 15, 20117, 5) /* Conviction 5 */,
+(202, 16, 20375, 1) /* Seal of Command 1 */,
+(202, 17, 26022, 1) /* Pursuit of Justice 1 */,
+(202, 18, 26022, 2) /* Pursuit of Justice 2 */,
+(202, 19, 31866, 1) /* Crusade 1 */,
+(202, 20, 31866, 2) /* Crusade 2 */,
+(202, 21, 31866, 3) /* Crusade 3 */,
+(202, 22, 32043, 1) /* Sanctity of Battle 1 */,
+(202, 23, 32043, 2) /* Sanctity of Battle 2 */,
+(202, 24, 32043, 3) /* Sanctity of Battle 3 */,
+(202, 25, 20111, 1) /* Two-Handed Weapon Specialization 1 */,
+(202, 26, 20111, 2) /* Two-Handed Weapon Specialization 2 */,
+(202, 27, 20111, 3) /* Two-Handed Weapon Specialization 3 */,
+(202, 28, 31869, 1) /* Sanctified Retribution 1 */,
+(202, 29, 20049, 1) /* Vengeance 1 */,
+(202, 30, 20049, 2) /* Vengeance 2 */,
+(202, 31, 20049, 3) /* Vengeance 3 */,
+(202, 32, 31871, 1) /* Divine Purpose 1 */,
+(202, 33, 31871, 2) /* Divine Purpose 2 */,
+(202, 34, 53486, 1) /* The Art of War 1 */,
+(202, 35, 53486, 2) /* The Art of War 2 */,
+(202, 36, 20066, 1) /* Repentance 1 */,
+(202, 37, 31876, 1) /* Judgements of the Wise 1 */,
+(202, 38, 31876, 2) /* Judgements of the Wise 2 */,
+(202, 39, 31876, 3) /* Judgements of the Wise 3 */,
+(202, 40, 31879, 1) /* Fanaticism 1 */,
+(202, 41, 31879, 2) /* Fanaticism 2 */,
+(202, 42, 31879, 3) /* Fanaticism 3 */,
+(202, 43, 53375, 1) /* Sanctified Wrath 1 */,
+(202, 44, 53375, 2) /* Sanctified Wrath 2 */,
+(202, 45, 53379, 1) /* Swift Retribution 1 */,
+(202, 46, 53379, 2) /* Swift Retribution 2 */,
+(202, 47, 53379, 3) /* Swift Retribution 3 */,
+(202, 48, 35395, 1) /* Crusader Strike 1 */,
+(202, 49, 53501, 1) /* Sheath of Light 1 */,
+(202, 50, 53501, 2) /* Sheath of Light 2 */,
+(202, 51, 53501, 3) /* Sheath of Light 3 */,
+(202, 52, 53380, 1) /* Righteous Vengeance 1 */,
+(202, 53, 53380, 2) /* Righteous Vengeance 2 */,
+(202, 54, 53380, 3) /* Righteous Vengeance 3 */,
+(202, 55, 53385, 1) /* Divine Storm 1 */,
+(202, 56, 20262, 1) /* Divine Strength 1 */,
+(202, 57, 20262, 2) /* Divine Strength 2 */,
+(202, 58, 20262, 3) /* Divine Strength 3 */,
+(202, 59, 20262, 4) /* Divine Strength 4 */,
+(202, 60, 20262, 5) /* Divine Strength 5 */,
+(202, 61, 20096, 1) /* Anticipation 1 */,
+(202, 62, 20096, 2) /* Anticipation 2 */,
+(202, 63, 20096, 3) /* Anticipation 3 */,
+(202, 64, 20096, 4) /* Anticipation 4 */,
+(202, 65, 20096, 5) /* Anticipation 5 */,
+(202, 66, 20468, 1) /* Improved Righteous Fury 1 */,
+(202, 67, 20468, 2) /* Improved Righteous Fury 2 */,
+(202, 68, 20468, 3) /* Improved Righteous Fury 3 */,
+(202, 69, 20143, 1) /* Toughness 1 */,
+(202, 70, 20143, 2) /* Toughness 2 */,
+(202, 71, 20143, 3) /* Toughness 3 */;

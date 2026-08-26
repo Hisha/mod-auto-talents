@@ -2,40 +2,20 @@
 
 Server-side automatic talent leveling for AzerothCore 3.3.5a.
 
-## Current milestone
+## Current scope
 
-This first development milestone provides the framework only:
+Players choose a server-provided build for each native talent spec slot. When the player logs in, gains a level, changes active dual-spec slot, or changes the assignment for the active slot, the module reconciles the active talent tree to the selected build through the number of talent points currently available.
 
-- Server-owned predefined build records.
-- One build assignment for each native dual-talent slot.
-- `.autotalent list`, `.autotalent status`, `.autotalent set`, and `.autotalent clear`.
-- Reconciliation triggers on login, level-up, and dual-spec change.
-- Persistent character assignments.
-- Paladin Protection and Retribution placeholder build definitions.
+The module does not require a client addon. Build definitions and their exact one-point-at-a-time order live in the world database.
 
-It intentionally does **not** spend or reset talent points yet. The next milestone adds the ordered talent application/reconciliation engine after this framework is verified to compile and load correctly.
+## Built-in test builds
 
-## SQL policy
+The first complete data set is Paladin:
 
-Shipped base SQL files represent the complete current schema. Long-term module SQL should use complete `CREATE TABLE` definitions and seed `DELETE`/`INSERT` statements. Temporary `ALTER TABLE` statements may be supplied during development when useful, but they are not retained as the permanent install schema.
+- `201` - Protection (`0/53/18` at level 80)
+- `202` - Retribution (`0/16/55` at level 80)
 
-## Installation
-
-Clone or copy the module under AzerothCore's `modules` directory, apply the world and characters SQL files, re-run CMake/build, install, and restart worldserver.
-
-World DB:
-
-```bash
-mysql -u <user> -p acore_world < modules/mod-auto-talents/data/sql/db-world/base/auto_talent_builds.sql
-```
-
-Characters DB:
-
-```bash
-mysql -u <user> -p acore_characters < modules/mod-auto-talents/data/sql/db-characters/base/auto_talent_characters.sql
-```
-
-Copy the installed `mod_auto_talents.conf.dist` to `mod_auto_talents.conf` if you want local overrides.
+These are intended as useful leveling builds and, more importantly, to prove the complete automatic progression engine before adding the remaining classes/specs.
 
 ## Commands
 
@@ -46,19 +26,55 @@ Copy the installed `mod_auto_talents.conf.dist` to `mod_auto_talents.conf` if yo
 .autotalent clear <1|2>
 ```
 
-For the initial Paladin test data:
-
-```text
-201 = Protection
-202 = Retribution
-```
-
-Example:
+Examples:
 
 ```text
 .autotalent set 1 202
 .autotalent set 2 201
-.autotalent status
 ```
 
-Set `AutoTalents.Debug = 1` while testing to log login, level-up, spec-change, and assignment-change reconciliation triggers.
+If the assigned slot is active, `set` reconciles immediately. An inactive dual-spec slot is left untouched until it becomes active.
+
+## Reconciliation behavior
+
+The same reconciliation operation is used for login, level-up, active spec change, and active assignment change.
+
+- If the current active tree exactly matches the scripted prefix, only newly available points are learned.
+- If the active tree does not match the selected scripted prefix, that active spec is reset for free and rebuilt through the current available talent-point count.
+- Only the active native dual-spec slot is ever modified.
+- AzerothCore's normal `LearnTalent()` path applies each point, so normal class, prerequisite, tier, rank, and free-point checks remain authoritative.
+
+## SQL layout
+
+World database:
+
+- `auto_talent_build`
+- `auto_talent_build_step`
+
+Characters database:
+
+- `auto_talent_character`
+
+The shipped SQL files are complete current-state base files. Permanent module SQL uses complete `CREATE` definitions plus `DELETE`/`INSERT` seed maintenance; shipped schema evolution is not represented as a chain of `ALTER` statements.
+
+For build authoring, `auto_talent_build_step.talent_id` accepts either a real `Talent.dbc` TalentID or any spell ID belonging to that talent. Spell references are normalized to the proper TalentID when the server loads the definitions. `rank` is human-readable and 1-based.
+
+## Configuration
+
+```ini
+AutoTalents.Enable = 1
+AutoTalents.Debug = 0
+AutoTalents.LoginMessage = 0
+```
+
+`AutoTalents.Debug = 1` logs validation and actual reconciliation activity. Characters with no assigned build are intentionally not logged, preventing playerbot startup spam.
+
+## Installation / test update
+
+Apply the complete world base SQL after updating this milestone so the two Paladin builds receive their ordered steps:
+
+```bash
+mysql -u root -p acore_world < modules/mod-auto-talents/data/sql/db-world/base/auto_talent_builds.sql
+```
+
+The character schema did not change in this milestone.

@@ -1,9 +1,108 @@
 #include "AutoTalentMgr.h"
 
 #include "Config.h"
+#include "DBCStores.h"
 #include "DatabaseEnv.h"
 #include "Log.h"
 #include "Player.h"
+
+#include <algorithm>
+#include <map>
+#include <unordered_map>
+
+namespace
+{
+using TalentRankMap = std::unordered_map<uint32, uint8>;
+
+TalentEntry const* ResolveTalentReference(uint32& talentReference)
+{
+    // Preferred form: a Talent.dbc TalentID.
+    if (TalentEntry const* talentInfo = sTalentStore.LookupEntry(talentReference))
+        return talentInfo;
+
+    // Convenience form used by the built-in SQL: any spell rank belonging to
+    // the talent.  Normalize it to the Talent.dbc TalentID in memory.
+    if (TalentSpellPos const* position = GetTalentSpellPos(talentReference))
+    {
+        talentReference = position->talent_id;
+        return sTalentStore.LookupEntry(talentReference);
+    }
+
+    return nullptr;
+}
+
+TalentRankMap BuildExpectedRanks(AutoTalentBuild const& build, uint32 pointCount)
+{
+    TalentRankMap expected;
+    pointCount = std::min<uint32>(pointCount, build.Steps.size());
+
+    for (uint32 i = 0; i < pointCount; ++i)
+        expected[build.Steps[i].TalentId] = build.Steps[i].Rank;
+
+    return expected;
+}
+
+TalentRankMap GetCurrentRanks(Player* player, uint8 specSlot, uint32& spentPoints)
+{
+    TalentRankMap current;
+    spentPoints = 0;
+
+    for (auto const& [spellId, playerTalent] : player->GetTalentMap())
+    {
+        if (!playerTalent || playerTalent->State == PLAYERSPELL_REMOVED || !playerTalent->IsInSpec(specSlot))
+            continue;
+
+        TalentSpellPos const* position = GetTalentSpellPos(spellId);
+        if (!position)
+            continue;
+
+        uint8 rank = position->rank + 1;
+        auto itr = current.find(position->talent_id);
+        if (itr == current.end() || rank > itr->second)
+            current[position->talent_id] = rank;
+    }
+
+    for (auto const& [talentId, rank] : current)
+    {
+        (void)talentId;
+        spentPoints += rank;
+    }
+
+    return current;
+}
+
+bool CurrentTreeMatchesPrefix(Player* player, AutoTalentBuild const& build, uint8 specSlot, uint32 prefixPoints)
+{
+    uint32 spentPoints = 0;
+    TalentRankMap current = GetCurrentRanks(player, specSlot, spentPoints);
+    if (spentPoints != prefixPoints)
+        return false;
+
+    return current == BuildExpectedRanks(build, prefixPoints);
+}
+
+bool LearnBuildStep(Player* player, AutoTalentBuild const& build, AutoTalentBuildStep const& step)
+{
+    TalentEntry const* talentInfo = sTalentStore.LookupEntry(step.TalentId);
+    if (!talentInfo || step.Rank == 0 || step.Rank > MAX_TALENT_RANK)
+        return false;
+
+    uint32 expectedSpell = talentInfo->RankID[step.Rank - 1];
+    if (!expectedSpell)
+        return false;
+
+    player->LearnTalent(step.TalentId, step.Rank - 1, false);
+
+    if (!player->HasTalent(expectedSpell, player->GetActiveSpec()))
+    {
+        LOG_ERROR("module", "AutoTalents: failed to apply build '{}' ({}) step {} to {}: talent {} rank {}.",
+            build.Name, build.Id, step.Sequence, player->GetName(), step.TalentId, uint32(step.Rank));
+        return false;
+    }
+
+    return true;
+}
+}
 
 AutoTalentMgr* AutoTalentMgr::instance()
 {
@@ -72,7 +171,83 @@ void AutoTalentMgr::LoadBuilds()
         } while (stepResult->NextRow());
     }
 
-    LOG_INFO("module", "AutoTalents: loaded {} build definition(s).", _builds.size());
+    uint32 enabledBuilds = 0;
+    for (auto& [id, build] : _builds)
+    {
+        (void)id;
+        if (!build.Enabled)
+            continue;
+
+        bool valid = true;
+        std::unordered_map<uint32, uint8> lastRankByTalent;
+
+        for (uint32 index = 0; index < build.Steps.size(); ++index)
+        {
+            AutoTalentBuildStep& step = build.Steps[index];
+
+            if (step.Sequence != index + 1)
+            {
+                LOG_ERROR("module", "AutoTalents: disabling build '{}' ({}): expected sequence {}, found {}.",
+                    build.Name, build.Id, index + 1, step.Sequence);
+                valid = false;
+                break;
+            }
+
+            uint32 originalReference = step.TalentId;
+            TalentEntry const* talentInfo = ResolveTalentReference(step.TalentId);
+            if (!talentInfo)
+            {
+                LOG_ERROR("module", "AutoTalents: disabling build '{}' ({}): step {} references unknown talent/spell {}.",
+                    build.Name, build.Id, step.Sequence, originalReference);
+                valid = false;
+                break;
+            }
+
+            if (step.Rank == 0 || step.Rank > MAX_TALENT_RANK || !talentInfo->RankID[step.Rank - 1])
+            {
+                LOG_ERROR("module", "AutoTalents: disabling build '{}' ({}): step {} has invalid rank {} for talent {}.",
+                    build.Name, build.Id, step.Sequence, uint32(step.Rank), step.TalentId);
+                valid = false;
+                break;
+            }
+
+            TalentTabEntry const* talentTab = sTalentTabStore.LookupEntry(talentInfo->TalentTab);
+            if (!talentTab || build.ClassId == 0 || build.ClassId >= MAX_CLASSES ||
+                !(talentTab->ClassMask & (1u << (build.ClassId - 1))))
+            {
+                LOG_ERROR("module", "AutoTalents: disabling build '{}' ({}): step {} talent {} is not valid for class {}.",
+                    build.Name, build.Id, step.Sequence, step.TalentId, uint32(build.ClassId));
+                valid = false;
+                break;
+            }
+
+            uint8 expectedRank = lastRankByTalent[step.TalentId] + 1;
+            if (step.Rank != expectedRank)
+            {
+                LOG_ERROR("module", "AutoTalents: disabling build '{}' ({}): step {} talent {} expected rank {}, found rank {}.",
+                    build.Name, build.Id, step.Sequence, step.TalentId, uint32(expectedRank), uint32(step.Rank));
+                valid = false;
+                break;
+            }
+
+            lastRankByTalent[step.TalentId] = step.Rank;
+        }
+
+        if (!valid || build.Steps.empty())
+        {
+            if (build.Steps.empty())
+                LOG_ERROR("module", "AutoTalents: disabling build '{}' ({}): no talent steps are defined.", build.Name, build.Id);
+            build.Enabled = false;
+            continue;
+        }
+
+        ++enabledBuilds;
+        if (_debug)
+            LOG_INFO("module", "AutoTalents: validated build '{}' ({}) with {} ordered step(s).",
+                build.Name, build.Id, build.Steps.size());
+    }
+
+    LOG_INFO("module", "AutoTalents: loaded {} build definition(s), {} enabled and valid.", _builds.size(), enabledBuilds);
 }
 
 AutoTalentBuild const* AutoTalentMgr::GetBuild(uint32 buildId) const
@@ -177,14 +352,8 @@ void AutoTalentMgr::HandleReconcileTrigger(Player* player, char const* reason)
 
     uint8 activeSlot = player->GetActiveSpec();
     AutoTalentAssignment assignment = GetAssignment(player->GetGUID().GetCounter(), activeSlot);
-
     if (!assignment.Found)
-    {
-        if (_debug)
-            LOG_INFO("module", "AutoTalents: {} trigger for {} (level {}, slot {}) - no assigned build.",
-                reason, player->GetName(), player->GetLevel(), uint32(activeSlot + 1));
         return;
-    }
 
     AutoTalentBuild const* build = GetBuild(assignment.BuildId);
     if (!build || !build->Enabled)
@@ -194,15 +363,71 @@ void AutoTalentMgr::HandleReconcileTrigger(Player* player, char const* reason)
         return;
     }
 
-    if (_debug)
+    if (build->ClassId != player->getClass())
     {
-        uint32 expectedPoints = player->GetLevel() >= 10 ? player->GetLevel() - 9 : 0;
-        LOG_INFO("module", "AutoTalents: {} trigger for {} - level {}, active slot {}, build '{}' ({}), target points {}, defined steps {}.",
-            reason, player->GetName(), player->GetLevel(), uint32(activeSlot + 1), build->Name, build->Id,
-            expectedPoints, build->Steps.size());
+        LOG_ERROR("module", "AutoTalents: refusing build '{}' ({}) for {} because the build class ({}) does not match player class ({}).",
+            build->Name, build->Id, player->GetName(), uint32(build->ClassId), uint32(player->getClass()));
+        return;
     }
 
-    // Milestone 1 intentionally stops here.
-    // The talent reconciliation/application engine is added after the module,
-    // SQL schema, commands, and event hooks are verified on a live server.
+    uint32 availablePoints = player->CalculateTalentsPoints();
+    uint32 targetPoints = std::min<uint32>(availablePoints, build->Steps.size());
+
+    uint32 currentSpent = 0;
+    GetCurrentRanks(player, activeSlot, currentSpent);
+
+    if (_debug)
+    {
+        LOG_INFO("module", "AutoTalents: {} trigger for {} - level {}, active slot {}, build '{}' ({}), spent {}, free {}, target {}.",
+            reason, player->GetName(), player->GetLevel(), uint32(activeSlot + 1), build->Name, build->Id,
+            currentSpent, player->GetFreeTalentPoints(), targetPoints);
+    }
+
+    if (currentSpent == targetPoints && CurrentTreeMatchesPrefix(player, *build, activeSlot, targetPoints))
+        return;
+
+    uint32 startStep = currentSpent;
+    bool rebuilt = false;
+
+    // The active tree is allowed to grow incrementally only when everything
+    // already spent is exactly the prefix of the selected build.
+    if (currentSpent > targetPoints || !CurrentTreeMatchesPrefix(player, *build, activeSlot, currentSpent))
+    {
+        if (currentSpent > 0)
+        {
+            player->resetTalents(true);
+            player->SendTalentsInfoData(false);
+            rebuilt = true;
+        }
+
+        startStep = 0;
+    }
+
+    if (targetPoints == 0)
+        return;
+
+    uint32 applied = 0;
+    for (uint32 i = startStep; i < targetPoints; ++i)
+    {
+        if (player->GetFreeTalentPoints() == 0)
+        {
+            LOG_ERROR("module", "AutoTalents: {} ran out of free talent points while applying build '{}' ({}) at step {} of {}.",
+                player->GetName(), build->Name, build->Id, i + 1, targetPoints);
+            break;
+        }
+
+        if (!LearnBuildStep(player, *build, build->Steps[i]))
+            break;
+
+        ++applied;
+    }
+
+    player->SendTalentsInfoData(false);
+
+    if (_debug && (applied > 0 || rebuilt))
+    {
+        LOG_INFO("module", "AutoTalents: {} {} build '{}' ({}) for slot {} through {} point(s); applied {} point(s) this pass{}.",
+            player->GetName(), rebuilt ? "rebuilt" : "advanced", build->Name, build->Id, uint32(activeSlot + 1),
+            targetPoints, applied, rebuilt ? " after a free reset" : "");
+    }
 }
