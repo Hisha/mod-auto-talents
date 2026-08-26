@@ -4,7 +4,7 @@ Server-side automatic talent leveling for AzerothCore WotLK 3.3.5a.
 
 Players can select a predefined server build for either native dual-talent slot. The active slot is reconciled automatically on login, level-up, spec change, or when assigning a build to the currently active slot. Prebuilt builds are always free.
 
-v0.4 added one personal/custom ordered build per character/spec slot with server-controlled pricing. v0.5 adds the optional **AutoTalentsUI** 3.3.5a addon: class-trainer buttons, a talent-tree planner, loading/editing an existing personal build, and save submission to the same server-side personal-build engine.
+v0.4 added one personal/custom ordered build per character/spec slot with server-controlled pricing. v0.5 added the optional **AutoTalentsUI** 3.3.5a companion addon and personal talent planner. v0.6 adds a server-backed trainer manager protocol so the addon can display and change prebuilt, personal, or disabled assignments without hard-coded build IDs.
 
 The addon is optional. Players without it retain all prebuilt-build and command functionality.
 
@@ -27,27 +27,17 @@ The `.autotalent ui ...` command family is the transport used by the optional ad
 
 ## Optional AutoTalentsUI addon
 
-Copy:
+AutoTalentsUI is distributed separately from the server module. At a normal class trainer it adds a single **Auto Talents** button. The manager opened from that button receives the player's available prebuilt builds and current Spec 1 / Spec 2 assignments from the server. Players can select a free prebuilt build, edit/use the slot's saved personal build, or disable Auto Talents for that slot. Spec 2 is only shown by the addon after Dual Talent Specialization is unlocked.
 
-`client/AutoTalentsUI/`
+The personal planner uses the client's own Wrath talent data through `GetNumTalentTabs`, `GetTalentTabInfo`, `GetTalentInfo`, and `GetTalentPrereqs`. The exact order of planned points becomes the leveling sequence.
 
-into the WoW 3.3.5a client's:
+The addon communicates with the module using player chat commands and tagged system-message responses. Protocol messages are filtered from the visible chat frame by the addon. The server remains authoritative for available prebuilt builds, assignment, price, validation, storage, and talent application.
 
-`Interface/AddOns/AutoTalentsUI/`
+Convenience/testing commands:
 
-At a normal class trainer the addon adds:
-
-- **Auto Talent Build - Spec 1**
-- **Auto Talent Build - Spec 2** (only when Dual Talent Specialization exists)
-
-The planner uses the client's own Wrath talent data through `GetNumTalentTabs`, `GetTalentTabInfo`, `GetTalentInfo`, and `GetTalentPrereqs`. Talents are displayed in their normal tier/column locations. The exact order of left-clicks becomes the leveling sequence. `Undo Last` deliberately removes only the most recent point so the ordered progression remains deterministic.
-
-The addon communicates with the module using player chat commands and tagged system-message responses. Protocol messages are filtered from the visible chat frame by the addon. The server remains authoritative for price, validation, storage, assignment, and talent application.
-
-For testing the planner without visiting a trainer:
-
-- `/atui 1`
-- `/atui 2`
+- `/atui` opens the assignment manager.
+- `/atui 1` opens the Spec 1 personal planner directly.
+- `/atui 2` opens the Spec 2 personal planner directly.
 
 ## Personal-build pricing
 

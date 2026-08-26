@@ -31,7 +31,11 @@ public:
             { "begin",  HandleUiBeginCommand,  SEC_PLAYER, Console::No },
             { "add",    HandleUiAddCommand,    SEC_PLAYER, Console::No },
             { "commit", HandleUiCommitCommand, SEC_PLAYER, Console::No },
-            { "cancel", HandleUiCancelCommand, SEC_PLAYER, Console::No }
+            { "cancel",   HandleUiCancelCommand,   SEC_PLAYER, Console::No },
+            { "overview", HandleUiOverviewCommand, SEC_PLAYER, Console::No },
+            { "select",   HandleUiSelectCommand,   SEC_PLAYER, Console::No },
+            { "personal", HandleUiPersonalCommand, SEC_PLAYER, Console::No },
+            { "clear",    HandleUiClearCommand,    SEC_PLAYER, Console::No }
         };
 
         static ChatCommandTable autoTalentCommandTable =
@@ -386,6 +390,140 @@ private:
         return true;
     }
 
+
+    static bool HandleUiOverviewCommand(ChatHandler* handler, char const* /*args*/)
+    {
+        Player* player = GetPlayer(handler);
+        if (!player)
+            return false;
+
+        uint32 guid = player->GetGUID().GetCounter();
+        uint8 numGroups = 2;
+
+        handler->PSendSysMessage("ATUI|OVERVIEWBEGIN|{}|{}", uint32(player->GetActiveSpec() + 1), uint32(numGroups));
+
+        std::vector<AutoTalentBuild const*> builds = sAutoTalentMgr->GetBuildsForClass(player->getClass());
+        for (AutoTalentBuild const* build : builds)
+        {
+            if (!build)
+                continue;
+            handler->PSendSysMessage("ATUI|BUILD|{}|{}|{}", build->Id, ProtocolSafe(build->Name), ProtocolSafe(build->Description));
+        }
+
+        for (uint8 slot = 0; slot < numGroups; ++slot)
+        {
+            AutoTalentAssignment assignment = sAutoTalentMgr->GetAssignment(guid, slot);
+            AutoTalentPersonalBuildInfo personal = sAutoTalentMgr->GetPersonalBuildInfo(guid, slot);
+            uint32 cost = sAutoTalentMgr->GetNextPersonalBuildCost(guid, slot);
+
+            uint32 type = 0;
+            uint32 buildId = 0;
+            std::string assignedName = "Disabled";
+            if (assignment.Found)
+            {
+                if (assignment.BuildType == AutoTalentBuildType::Personal)
+                {
+                    type = 2;
+                    assignedName = personal.Found ? personal.Name : "Personal Build";
+                }
+                else
+                {
+                    type = 1;
+                    buildId = assignment.BuildId;
+                    if (AutoTalentBuild const* build = sAutoTalentMgr->GetBuild(assignment.BuildId))
+                        assignedName = build->Name;
+                    else
+                        assignedName = "Missing Prebuilt Build";
+                }
+            }
+
+            handler->PSendSysMessage("ATUI|SLOT|{}|{}|{}|{}|{}|{}|{}|{}",
+                uint32(slot + 1), type, buildId, ProtocolSafe(assignedName), personal.Found ? 1 : 0,
+                ProtocolSafe(personal.Found ? personal.Name : "Personal Build"), personal.SaveCount, cost);
+        }
+
+        handler->SendSysMessage("ATUI|OVERVIEWEND");
+        return true;
+    }
+
+    static bool HandleUiSelectCommand(ChatHandler* handler, char const* args)
+    {
+        Player* player = GetPlayer(handler);
+        if (!player)
+            return false;
+
+        unsigned int slotInput = 0;
+        unsigned int buildId = 0;
+        if (!args || std::sscanf(args, "%u %u", &slotInput, &buildId) != 2 || slotInput < 1 || slotInput > 2)
+        {
+            SendUiError(handler, "Usage: .autotalent ui select <1|2> <buildId>");
+            return true;
+        }
+
+        std::string error;
+        if (!sAutoTalentMgr->SetAssignment(player, uint8(slotInput - 1), uint32(buildId), error))
+        {
+            SendUiError(handler, error);
+            return true;
+        }
+
+        if (player->GetActiveSpec() == slotInput - 1)
+            sAutoTalentMgr->HandleReconcileTrigger(player, "ui-assignment-change");
+
+        handler->PSendSysMessage("ATUI|ASSIGNOK|{}", slotInput);
+        return true;
+    }
+
+    static bool HandleUiPersonalCommand(ChatHandler* handler, char const* args)
+    {
+        Player* player = GetPlayer(handler);
+        if (!player)
+            return false;
+
+        unsigned int slotInput = 0;
+        if (!ParseSlot(args, slotInput))
+        {
+            SendUiError(handler, "Usage: .autotalent ui personal <1|2>");
+            return true;
+        }
+
+        std::string error;
+        if (!sAutoTalentMgr->SetPersonalAssignment(player, uint8(slotInput - 1), error))
+        {
+            SendUiError(handler, error);
+            return true;
+        }
+
+        if (player->GetActiveSpec() == slotInput - 1)
+            sAutoTalentMgr->HandleReconcileTrigger(player, "ui-personal-assignment");
+
+        handler->PSendSysMessage("ATUI|ASSIGNOK|{}", slotInput);
+        return true;
+    }
+
+    static bool HandleUiClearCommand(ChatHandler* handler, char const* args)
+    {
+        Player* player = GetPlayer(handler);
+        if (!player)
+            return false;
+
+        unsigned int slotInput = 0;
+        if (!ParseSlot(args, slotInput))
+        {
+            SendUiError(handler, "Usage: .autotalent ui clear <1|2>");
+            return true;
+        }
+
+        std::string error;
+        if (!sAutoTalentMgr->ClearAssignment(player, uint8(slotInput - 1), error))
+        {
+            SendUiError(handler, error);
+            return true;
+        }
+
+        handler->PSendSysMessage("ATUI|ASSIGNOK|{}", slotInput);
+        return true;
+    }
     static bool HandleUiCancelCommand(ChatHandler* handler, char const* args)
     {
         Player* player = GetPlayer(handler);
