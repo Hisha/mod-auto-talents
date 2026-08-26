@@ -7,9 +7,12 @@
 #include "Player.h"
 #include "SpellInfo.h"
 #include "SpellMgr.h"
+#include "StringFormat.h"
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
+#include <limits>
 #include <map>
 #include <string>
 #include <unordered_map>
@@ -145,6 +148,13 @@ void AutoTalentMgr::LoadConfig()
     _enabled = sConfigMgr->GetOption<bool>("AutoTalents.Enable", true);
     _debug = sConfigMgr->GetOption<bool>("AutoTalents.Debug", false);
     _loginMessage = sConfigMgr->GetOption<bool>("AutoTalents.LoginMessage", false);
+
+    _personalBuildsEnabled = sConfigMgr->GetOption<bool>("AutoTalents.CustomBuilds.Enable", true);
+    _personalCostMode = std::min<uint8>(sConfigMgr->GetOption<uint8>("AutoTalents.CustomBuilds.CostMode", 0), 2);
+    _personalBaseCost = sConfigMgr->GetOption<uint32>("AutoTalents.CustomBuilds.BaseCost", 100000);
+    _personalCostIncrease = sConfigMgr->GetOption<uint32>("AutoTalents.CustomBuilds.CostIncrease", 50000);
+    _personalCostMultiplier = std::max<float>(sConfigMgr->GetOption<float>("AutoTalents.CustomBuilds.CostMultiplier", 1.5f), 1.0f);
+    _personalMaxCost = sConfigMgr->GetOption<uint32>("AutoTalents.CustomBuilds.MaxCost", 0);
 }
 
 void AutoTalentMgr::LoadBuilds()
@@ -307,14 +317,16 @@ AutoTalentAssignment AutoTalentMgr::GetAssignment(uint32 guid, uint8 specSlot) c
     AutoTalentAssignment assignment;
 
     QueryResult result = CharacterDatabase.Query(
-        "SELECT `build_id` FROM `auto_talent_character` WHERE `guid` = {} AND `spec_slot` = {}",
+        "SELECT `build_type`, `build_id` FROM `auto_talent_character` WHERE `guid` = {} AND `spec_slot` = {}",
         guid, uint32(specSlot));
 
     if (!result)
         return assignment;
 
     assignment.Found = true;
-    assignment.BuildId = result->Fetch()[0].Get<uint32>();
+    Field* fields = result->Fetch();
+    assignment.BuildType = fields[0].Get<uint8>() == 1 ? AutoTalentBuildType::Personal : AutoTalentBuildType::Prebuilt;
+    assignment.BuildId = fields[1].Get<uint32>();
     return assignment;
 }
 
@@ -345,11 +357,256 @@ bool AutoTalentMgr::SetAssignment(Player* player, uint8 specSlot, uint32 buildId
         return false;
     }
 
-    CharacterDatabase.Execute(
-        "INSERT INTO `auto_talent_character` (`guid`, `spec_slot`, `build_id`) "
-        "VALUES ({}, {}, {}) ON DUPLICATE KEY UPDATE `build_id` = VALUES(`build_id`)",
+    std::string sql = Acore::StringFormat(
+        "INSERT INTO `auto_talent_character` (`guid`, `spec_slot`, `build_type`, `build_id`) "
+        "VALUES ({}, {}, 0, {}) ON DUPLICATE KEY UPDATE `build_type` = 0, `build_id` = VALUES(`build_id`)",
         player->GetGUID().GetCounter(), uint32(specSlot), buildId);
+    CharacterDatabase.DirectExecute(sql.c_str());
 
+    return true;
+}
+
+AutoTalentPersonalBuildInfo AutoTalentMgr::GetPersonalBuildInfo(uint32 guid, uint8 specSlot) const
+{
+    AutoTalentPersonalBuildInfo info;
+    QueryResult result = CharacterDatabase.Query(
+        "SELECT `name`, `save_count` FROM `auto_talent_personal_build` WHERE `guid` = {} AND `spec_slot` = {}",
+        guid, uint32(specSlot));
+    if (!result)
+        return info;
+
+    Field* fields = result->Fetch();
+    info.Found = true;
+    info.Name = fields[0].Get<std::string>();
+    info.SaveCount = fields[1].Get<uint32>();
+    return info;
+}
+
+uint32 AutoTalentMgr::CalculatePersonalBuildCost(uint32 saveCount) const
+{
+    double cost = _personalBaseCost;
+    if (_personalCostMode == 1)
+        cost += double(saveCount) * double(_personalCostIncrease);
+    else if (_personalCostMode == 2)
+        cost *= std::pow(double(_personalCostMultiplier), double(saveCount));
+
+    if (_personalMaxCost > 0)
+        cost = std::min<double>(cost, _personalMaxCost);
+
+    return uint32(std::min<double>(cost, std::numeric_limits<int32>::max()));
+}
+
+uint32 AutoTalentMgr::GetNextPersonalBuildCost(uint32 guid, uint8 specSlot) const
+{
+    AutoTalentPersonalBuildInfo info = GetPersonalBuildInfo(guid, specSlot);
+    return CalculatePersonalBuildCost(info.Found ? info.SaveCount : 0);
+}
+
+bool AutoTalentMgr::ValidateBuild(AutoTalentBuild& build, bool requireComplete, std::string& error) const
+{
+    if (requireComplete && build.Steps.size() != 71)
+    {
+        error = "A personal build must contain exactly 71 ordered talent points.";
+        return false;
+    }
+
+    if (build.Steps.empty())
+    {
+        error = "The build has no talent steps.";
+        return false;
+    }
+
+    std::unordered_map<uint32, uint8> lastRankByTalent;
+    for (uint32 index = 0; index < build.Steps.size(); ++index)
+    {
+        AutoTalentBuildStep& step = build.Steps[index];
+        if (step.Sequence != index + 1)
+        {
+            error = "Talent steps are not contiguous.";
+            return false;
+        }
+
+        TalentEntry const* talentInfo = ResolveTalentName(step.TalentName, build.ClassId, step.TalentId);
+        if (!talentInfo)
+        {
+            error = "Unknown or wrong-class talent at step " + std::to_string(step.Sequence) + ": " + step.TalentName;
+            return false;
+        }
+
+        if (step.Rank == 0 || step.Rank > MAX_TALENT_RANK || !talentInfo->RankID[step.Rank - 1])
+        {
+            error = "Invalid talent rank at step " + std::to_string(step.Sequence) + ".";
+            return false;
+        }
+
+        uint8 expectedRank = lastRankByTalent[step.TalentId] + 1;
+        if (step.Rank != expectedRank)
+        {
+            error = "Talent ranks are not sequential at step " + std::to_string(step.Sequence) + ".";
+            return false;
+        }
+        lastRankByTalent[step.TalentId] = step.Rank;
+    }
+
+    return true;
+}
+
+bool AutoTalentMgr::LoadPersonalBuild(uint32 guid, uint8 specSlot, AutoTalentBuild& build, std::string& error) const
+{
+    QueryResult result = CharacterDatabase.Query(
+        "SELECT `class_id`, `name` FROM `auto_talent_personal_build` WHERE `guid` = {} AND `spec_slot` = {}",
+        guid, uint32(specSlot));
+    if (!result)
+    {
+        error = "No personal build is saved for that spec slot.";
+        return false;
+    }
+
+    Field* fields = result->Fetch();
+    build = AutoTalentBuild{};
+    build.ClassId = fields[0].Get<uint8>();
+    build.Name = fields[1].Get<std::string>();
+    build.Description = "Personal build";
+    build.Enabled = true;
+    build.Personal = true;
+
+    QueryResult steps = CharacterDatabase.Query(
+        "SELECT `sequence`, `talent_name`, `rank` FROM `auto_talent_personal_build_step` "
+        "WHERE `guid` = {} AND `spec_slot` = {} ORDER BY `sequence`",
+        guid, uint32(specSlot));
+    if (!steps)
+    {
+        error = "The personal build has no saved talent steps.";
+        return false;
+    }
+
+    do
+    {
+        Field* sf = steps->Fetch();
+        AutoTalentBuildStep step;
+        step.Sequence = sf[0].Get<uint16>();
+        step.TalentName = sf[1].Get<std::string>();
+        step.Rank = sf[2].Get<uint8>();
+        build.Steps.push_back(std::move(step));
+    } while (steps->NextRow());
+
+    return ValidateBuild(build, true, error);
+}
+
+bool AutoTalentMgr::SavePersonalBuild(Player* player, uint8 specSlot, std::string const& name,
+    std::vector<AutoTalentBuildStep> steps, uint32& chargedCost, std::string& error)
+{
+    chargedCost = 0;
+    if (!_personalBuildsEnabled)
+    {
+        error = "Personal builds are disabled on this server.";
+        return false;
+    }
+    if (!player || specSlot > 1)
+    {
+        error = "Invalid player or spec slot.";
+        return false;
+    }
+
+    AutoTalentBuild build;
+    build.ClassId = player->getClass();
+    build.Name = name.empty() ? "Personal Build" : name.substr(0, 64);
+    build.Enabled = true;
+    build.Personal = true;
+    build.Steps = std::move(steps);
+    if (!ValidateBuild(build, true, error))
+        return false;
+
+    uint32 guid = player->GetGUID().GetCounter();
+    AutoTalentPersonalBuildInfo existing = GetPersonalBuildInfo(guid, specSlot);
+    chargedCost = CalculatePersonalBuildCost(existing.Found ? existing.SaveCount : 0);
+    if (player->GetMoney() < chargedCost)
+    {
+        error = "You do not have enough money to save this personal build.";
+        return false;
+    }
+
+    std::string escapedName = build.Name;
+    CharacterDatabase.EscapeString(escapedName);
+
+    CharacterDatabaseTransaction trans = CharacterDatabase.BeginTransaction();
+    std::string sql = Acore::StringFormat(
+        "INSERT INTO `auto_talent_personal_build` (`guid`, `spec_slot`, `class_id`, `name`, `save_count`) "
+        "VALUES ({}, {}, {}, '{}', 1) ON DUPLICATE KEY UPDATE `class_id` = VALUES(`class_id`), "
+        "`name` = VALUES(`name`), `save_count` = `save_count` + 1",
+        guid, uint32(specSlot), uint32(build.ClassId), escapedName);
+    trans->Append(sql.c_str());
+
+    sql = Acore::StringFormat(
+        "DELETE FROM `auto_talent_personal_build_step` WHERE `guid` = {} AND `spec_slot` = {}",
+        guid, uint32(specSlot));
+    trans->Append(sql.c_str());
+
+    for (AutoTalentBuildStep const& step : build.Steps)
+    {
+        std::string escapedTalent = step.TalentName;
+        CharacterDatabase.EscapeString(escapedTalent);
+        sql = Acore::StringFormat(
+            "INSERT INTO `auto_talent_personal_build_step` (`guid`, `spec_slot`, `sequence`, `talent_name`, `rank`) "
+            "VALUES ({}, {}, {}, '{}', {})",
+            guid, uint32(specSlot), uint32(step.Sequence), escapedTalent, uint32(step.Rank));
+        trans->Append(sql.c_str());
+    }
+
+    sql = Acore::StringFormat(
+        "INSERT INTO `auto_talent_character` (`guid`, `spec_slot`, `build_type`, `build_id`) "
+        "VALUES ({}, {}, 1, 0) ON DUPLICATE KEY UPDATE `build_type` = 1, `build_id` = 0",
+        guid, uint32(specSlot));
+    trans->Append(sql.c_str());
+    CharacterDatabase.DirectCommitTransaction(trans);
+
+    if (chargedCost > 0)
+        player->ModifyMoney(-int32(chargedCost));
+
+    return true;
+}
+
+bool AutoTalentMgr::ClonePrebuiltToPersonal(Player* player, uint8 specSlot, uint32 sourceBuildId,
+    std::string const& name, uint32& chargedCost, std::string& error)
+{
+    AutoTalentBuild const* source = GetBuild(sourceBuildId);
+    if (!source || !source->Enabled)
+    {
+        error = "That source build does not exist or is disabled.";
+        return false;
+    }
+    if (!player || source->ClassId != player->getClass())
+    {
+        error = "That source build is for a different class.";
+        return false;
+    }
+
+    std::string personalName = name.empty() ? source->Name + " Personal" : name;
+    return SavePersonalBuild(player, specSlot, personalName, source->Steps, chargedCost, error);
+}
+
+bool AutoTalentMgr::SetPersonalAssignment(Player* player, uint8 specSlot, std::string& error)
+{
+    if (!player || specSlot > 1)
+    {
+        error = "Invalid player or spec slot.";
+        return false;
+    }
+
+    AutoTalentBuild build;
+    if (!LoadPersonalBuild(player->GetGUID().GetCounter(), specSlot, build, error))
+        return false;
+    if (build.ClassId != player->getClass())
+    {
+        error = "That personal build is for a different class.";
+        return false;
+    }
+
+    std::string sql = Acore::StringFormat(
+        "INSERT INTO `auto_talent_character` (`guid`, `spec_slot`, `build_type`, `build_id`) "
+        "VALUES ({}, {}, 1, 0) ON DUPLICATE KEY UPDATE `build_type` = 1, `build_id` = 0",
+        player->GetGUID().GetCounter(), uint32(specSlot));
+    CharacterDatabase.DirectExecute(sql.c_str());
     return true;
 }
 
@@ -384,12 +641,28 @@ void AutoTalentMgr::HandleReconcileTrigger(Player* player, char const* reason)
     if (!assignment.Found)
         return;
 
-    AutoTalentBuild const* build = GetBuild(assignment.BuildId);
-    if (!build || !build->Enabled)
+    AutoTalentBuild personalBuild;
+    AutoTalentBuild const* build = nullptr;
+    std::string loadError;
+    if (assignment.BuildType == AutoTalentBuildType::Personal)
     {
-        LOG_WARN("module", "AutoTalents: {} has build {} assigned to slot {}, but the build is missing or disabled.",
-            player->GetName(), assignment.BuildId, uint32(activeSlot + 1));
-        return;
+        if (!LoadPersonalBuild(player->GetGUID().GetCounter(), activeSlot, personalBuild, loadError))
+        {
+            LOG_WARN("module", "AutoTalents: {} has a personal build assigned to slot {}, but it could not be loaded: {}",
+                player->GetName(), uint32(activeSlot + 1), loadError);
+            return;
+        }
+        build = &personalBuild;
+    }
+    else
+    {
+        build = GetBuild(assignment.BuildId);
+        if (!build || !build->Enabled)
+        {
+            LOG_WARN("module", "AutoTalents: {} has build {} assigned to slot {}, but the build is missing or disabled.",
+                player->GetName(), assignment.BuildId, uint32(activeSlot + 1));
+            return;
+        }
     }
 
     if (build->ClassId != player->getClass())

@@ -9,11 +9,50 @@ AutoTalents.Enable = 1
 
 # AutoTalents.Debug
 #   Writes reconciliation trigger information to the worldserver log.
-#   This is useful while the module is under development.
 #   Default: 0
 AutoTalents.Debug = 1
 
 # AutoTalents.LoginMessage
 #   Shows a short module-enabled message when a player logs in.
 #   Default: 0
-AutoTalents.LoginMessage = 0
+AutoTalents.LoginMessage = 1
+
+# -----------------------------------------------------------------------------
+# Personal/custom builds
+# -----------------------------------------------------------------------------
+
+# AutoTalents.CustomBuilds.Enable
+#   Allows a character to maintain one personal ordered build per native spec slot.
+#   Prebuilt server builds remain free regardless of this setting.
+#   Default: 1
+AutoTalents.CustomBuilds.Enable = 1
+
+# AutoTalents.CustomBuilds.CostMode
+#   0 = flat:       BaseCost
+#   1 = linear:     BaseCost + (previous successful saves * CostIncrease)
+#   2 = multiplier: BaseCost * (CostMultiplier ^ previous successful saves)
+#   Default: 0
+AutoTalents.CustomBuilds.CostMode = 0
+
+# AutoTalents.CustomBuilds.BaseCost
+#   Base price in copper for creating/updating a personal build.
+#   10000 copper = 1 gold.
+#   Default: 100000 (10 gold)
+AutoTalents.CustomBuilds.BaseCost = 100000
+
+# AutoTalents.CustomBuilds.CostIncrease
+#   Added per previous successful save when CostMode = 1.
+#   Default: 50000 (5 gold)
+AutoTalents.CustomBuilds.CostIncrease = 50000
+
+# AutoTalents.CustomBuilds.CostMultiplier
+#   Multiplier per previous successful save when CostMode = 2.
+#   Example 1.5 with BaseCost 10g: 10g, 15g, 22.5g, ...
+#   Values below 1.0 are treated as 1.0.
+#   Default: 1.5
+AutoTalents.CustomBuilds.CostMultiplier = 1.5
+
+# AutoTalents.CustomBuilds.MaxCost
+#   Optional maximum price in copper. 0 means no configured ceiling.
+#   Default: 0
+AutoTalents.CustomBuilds.MaxCost = 0
