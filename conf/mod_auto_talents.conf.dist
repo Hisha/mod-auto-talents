@@ -32,7 +32,7 @@ AutoTalents.CustomBuilds.Enable = 1
 #   1 = linear:     BaseCost + (previous successful saves * CostIncrease)
 #   2 = multiplier: BaseCost * (CostMultiplier ^ previous successful saves)
 #   Default: 0
-AutoTalents.CustomBuilds.CostMode = 0
+AutoTalents.CustomBuilds.CostMode = 1
 
 # AutoTalents.CustomBuilds.BaseCost
 #   Base price in copper for creating/updating a personal build.
