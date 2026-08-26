@@ -1,8 +1,0 @@
-## Interface: 30300
-## Title: Auto Talents UI
-## Notes: Optional trainer-based personal talent build editor for mod-auto-talents.
-## Author: Hisha / mod-auto-talents
-## Version: 0.5.0
-## SavedVariables: AutoTalentsUI_DB
-
-AutoTalentsUI.lua
