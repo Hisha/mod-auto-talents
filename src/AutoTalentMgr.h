@@ -48,6 +48,14 @@ struct AutoTalentPersonalBuildInfo
     std::string Name;
 };
 
+struct AutoTalentBuildDraft
+{
+    uint8 ClassId = 0;
+    uint8 SpecSlot = 0;
+    std::string Name;
+    std::vector<AutoTalentBuildStep> Steps;
+};
+
 class AutoTalentMgr
 {
 public:
@@ -77,6 +85,12 @@ public:
         std::string const& name, uint32& chargedCost, std::string& error);
     uint32 GetNextPersonalBuildCost(uint32 guid, uint8 specSlot) const;
 
+    bool BeginPersonalBuildDraft(Player* player, uint8 specSlot, std::string const& name, std::string& error);
+    bool AddPersonalBuildDraftStep(Player* player, uint8 specSlot, uint16 sequence, uint8 rank,
+        std::string const& talentName, std::string& error);
+    bool CommitPersonalBuildDraft(Player* player, uint8 specSlot, uint32& chargedCost, std::string& error);
+    void CancelPersonalBuildDraft(uint32 guid, uint8 specSlot);
+
     void HandleReconcileTrigger(Player* player, char const* reason);
 
 private:
@@ -84,6 +98,7 @@ private:
 
     bool ValidateBuild(AutoTalentBuild& build, bool requireComplete, std::string& error) const;
     uint32 CalculatePersonalBuildCost(uint32 saveCount) const;
+    static uint64 MakeDraftKey(uint32 guid, uint8 specSlot);
 
     bool _enabled = true;
     bool _debug = false;
@@ -97,6 +112,7 @@ private:
     uint32 _personalMaxCost = 0;
 
     std::map<uint32, AutoTalentBuild> _builds;
+    std::map<uint64, AutoTalentBuildDraft> _drafts;
 };
 
 #define sAutoTalentMgr AutoTalentMgr::instance()

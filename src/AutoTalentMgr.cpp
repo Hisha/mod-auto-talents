@@ -402,6 +402,106 @@ uint32 AutoTalentMgr::GetNextPersonalBuildCost(uint32 guid, uint8 specSlot) cons
     return CalculatePersonalBuildCost(info.Found ? info.SaveCount : 0);
 }
 
+uint64 AutoTalentMgr::MakeDraftKey(uint32 guid, uint8 specSlot)
+{
+    return (uint64(guid) << 8) | uint64(specSlot);
+}
+
+bool AutoTalentMgr::BeginPersonalBuildDraft(Player* player, uint8 specSlot, std::string const& name, std::string& error)
+{
+    if (!_personalBuildsEnabled)
+    {
+        error = "Personal builds are disabled on this server.";
+        return false;
+    }
+    if (!player || specSlot > 1)
+    {
+        error = "Invalid player or spec slot.";
+        return false;
+    }
+
+    AutoTalentBuildDraft draft;
+    draft.ClassId = player->getClass();
+    draft.SpecSlot = specSlot;
+    draft.Name = name.empty() ? "Personal Build" : name.substr(0, 64);
+    draft.Steps.reserve(71);
+    _drafts[MakeDraftKey(player->GetGUID().GetCounter(), specSlot)] = std::move(draft);
+    return true;
+}
+
+bool AutoTalentMgr::AddPersonalBuildDraftStep(Player* player, uint8 specSlot, uint16 sequence, uint8 rank,
+    std::string const& talentName, std::string& error)
+{
+    if (!player || specSlot > 1)
+    {
+        error = "Invalid player or spec slot.";
+        return false;
+    }
+    if (sequence < 1 || sequence > 71 || rank < 1 || rank > MAX_TALENT_RANK || talentName.empty())
+    {
+        error = "Invalid personal-build draft step.";
+        return false;
+    }
+
+    auto itr = _drafts.find(MakeDraftKey(player->GetGUID().GetCounter(), specSlot));
+    if (itr == _drafts.end())
+    {
+        error = "No personal-build draft is active for that spec slot.";
+        return false;
+    }
+    if (itr->second.ClassId != player->getClass())
+    {
+        error = "The active personal-build draft belongs to a different class.";
+        return false;
+    }
+    if (sequence != itr->second.Steps.size() + 1)
+    {
+        error = "Personal-build draft steps must arrive in order.";
+        return false;
+    }
+
+    AutoTalentBuildStep step;
+    step.Sequence = sequence;
+    step.Rank = rank;
+    step.TalentName = talentName.substr(0, 96);
+    itr->second.Steps.push_back(std::move(step));
+    return true;
+}
+
+bool AutoTalentMgr::CommitPersonalBuildDraft(Player* player, uint8 specSlot, uint32& chargedCost, std::string& error)
+{
+    chargedCost = 0;
+    if (!player || specSlot > 1)
+    {
+        error = "Invalid player or spec slot.";
+        return false;
+    }
+
+    uint64 key = MakeDraftKey(player->GetGUID().GetCounter(), specSlot);
+    auto itr = _drafts.find(key);
+    if (itr == _drafts.end())
+    {
+        error = "No personal-build draft is active for that spec slot.";
+        return false;
+    }
+
+    AutoTalentBuildDraft draft = std::move(itr->second);
+    _drafts.erase(itr);
+
+    if (draft.ClassId != player->getClass())
+    {
+        error = "The personal-build draft belongs to a different class.";
+        return false;
+    }
+
+    return SavePersonalBuild(player, specSlot, draft.Name, std::move(draft.Steps), chargedCost, error);
+}
+
+void AutoTalentMgr::CancelPersonalBuildDraft(uint32 guid, uint8 specSlot)
+{
+    _drafts.erase(MakeDraftKey(guid, specSlot));
+}
+
 bool AutoTalentMgr::ValidateBuild(AutoTalentBuild& build, bool requireComplete, std::string& error) const
 {
     if (requireComplete && build.Steps.size() != 71)

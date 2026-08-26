@@ -7,6 +7,7 @@
 
 #include <cstdio>
 #include <string>
+#include <vector>
 
 using namespace Acore::ChatCommands;
 
@@ -24,13 +25,23 @@ public:
             { "use",   HandleCustomUseCommand,   SEC_PLAYER, Console::No }
         };
 
+        static ChatCommandTable uiCommandTable =
+        {
+            { "load",   HandleUiLoadCommand,   SEC_PLAYER, Console::No },
+            { "begin",  HandleUiBeginCommand,  SEC_PLAYER, Console::No },
+            { "add",    HandleUiAddCommand,    SEC_PLAYER, Console::No },
+            { "commit", HandleUiCommitCommand, SEC_PLAYER, Console::No },
+            { "cancel", HandleUiCancelCommand, SEC_PLAYER, Console::No }
+        };
+
         static ChatCommandTable autoTalentCommandTable =
         {
             { "list",   HandleListCommand,   SEC_PLAYER, Console::No },
             { "status", HandleStatusCommand, SEC_PLAYER, Console::No },
             { "set",    HandleSetCommand,    SEC_PLAYER, Console::No },
             { "clear",  HandleClearCommand,  SEC_PLAYER, Console::No },
-            { "custom", customCommandTable }
+            { "custom", customCommandTable },
+            { "ui",     uiCommandTable }
         };
 
         static ChatCommandTable commandTable =
@@ -50,6 +61,23 @@ private:
     static bool ParseSlot(char const* args, unsigned int& slotInput)
     {
         return args && std::sscanf(args, "%u", &slotInput) == 1 && slotInput >= 1 && slotInput <= 2;
+    }
+
+    static std::string ProtocolSafe(std::string value)
+    {
+        for (char& ch : value)
+        {
+            if (ch == '|')
+                ch = '/';
+            else if (ch == '\r' || ch == '\n')
+                ch = ' ';
+        }
+        return value;
+    }
+
+    static void SendUiError(ChatHandler* handler, std::string const& error)
+    {
+        handler->PSendSysMessage("ATUI|ERROR|{}", ProtocolSafe(error));
     }
 
     static bool HandleListCommand(ChatHandler* handler, char const* /*args*/)
@@ -237,6 +265,142 @@ private:
         handler->PSendSysMessage("Auto Talents: Spec {} assigned to its saved personal build.", slotInput);
         if (player->GetActiveSpec() == slotInput - 1)
             sAutoTalentMgr->HandleReconcileTrigger(player, "assignment-change");
+        return true;
+    }
+
+    static bool HandleUiLoadCommand(ChatHandler* handler, char const* args)
+    {
+        Player* player = GetPlayer(handler);
+        if (!player)
+            return false;
+
+        unsigned int slotInput = 0;
+        if (!ParseSlot(args, slotInput))
+        {
+            SendUiError(handler, "Usage: .autotalent ui load <1|2>");
+            return true;
+        }
+
+        uint8 slot = uint8(slotInput - 1);
+        uint32 guid = player->GetGUID().GetCounter();
+        uint32 cost = sAutoTalentMgr->GetNextPersonalBuildCost(guid, slot);
+        AutoTalentPersonalBuildInfo info = sAutoTalentMgr->GetPersonalBuildInfo(guid, slot);
+
+        if (!info.Found)
+        {
+            handler->PSendSysMessage("ATUI|LOADBEGIN|{}|0|0|{}|Personal Build", slotInput, cost);
+            handler->PSendSysMessage("ATUI|LOADEND|{}", slotInput);
+            return true;
+        }
+
+        AutoTalentBuild build;
+        std::string error;
+        if (!sAutoTalentMgr->LoadPersonalBuild(guid, slot, build, error))
+        {
+            SendUiError(handler, error);
+            return true;
+        }
+
+        handler->PSendSysMessage("ATUI|LOADBEGIN|{}|1|{}|{}|{}", slotInput, info.SaveCount, cost, ProtocolSafe(info.Name));
+        for (AutoTalentBuildStep const& step : build.Steps)
+            handler->PSendSysMessage("ATUI|STEP|{}|{}|{}|{}", slotInput, uint32(step.Sequence), uint32(step.Rank), ProtocolSafe(step.TalentName));
+        handler->PSendSysMessage("ATUI|LOADEND|{}", slotInput);
+        return true;
+    }
+
+    static bool HandleUiBeginCommand(ChatHandler* handler, char const* args)
+    {
+        Player* player = GetPlayer(handler);
+        if (!player)
+            return false;
+
+        unsigned int slotInput = 0;
+        int consumed = 0;
+        if (!args || std::sscanf(args, "%u %n", &slotInput, &consumed) < 1 || slotInput < 1 || slotInput > 2)
+        {
+            SendUiError(handler, "Usage: .autotalent ui begin <1|2> [name]");
+            return true;
+        }
+
+        std::string name = consumed > 0 && args[consumed] != '\0' ? std::string(args + consumed) : "Personal Build";
+        std::string error;
+        if (!sAutoTalentMgr->BeginPersonalBuildDraft(player, uint8(slotInput - 1), name, error))
+            SendUiError(handler, error);
+        else
+            handler->PSendSysMessage("ATUI|BEGINOK|{}", slotInput);
+        return true;
+    }
+
+    static bool HandleUiAddCommand(ChatHandler* handler, char const* args)
+    {
+        Player* player = GetPlayer(handler);
+        if (!player)
+            return false;
+
+        unsigned int slotInput = 0;
+        unsigned int sequence = 0;
+        unsigned int rank = 0;
+        int consumed = 0;
+        if (!args || std::sscanf(args, "%u %u %u %n", &slotInput, &sequence, &rank, &consumed) < 3 ||
+            slotInput < 1 || slotInput > 2 || sequence < 1 || sequence > 71 || rank < 1 || rank > 5 ||
+            consumed <= 0 || args[consumed] == '\0')
+        {
+            SendUiError(handler, "Usage: .autotalent ui add <1|2> <sequence> <rank> <talent name>");
+            return true;
+        }
+
+        std::string talentName(args + consumed);
+        std::string error;
+        if (!sAutoTalentMgr->AddPersonalBuildDraftStep(player, uint8(slotInput - 1), uint16(sequence), uint8(rank), talentName, error))
+            SendUiError(handler, error);
+        else if (sequence == 71)
+            handler->PSendSysMessage("ATUI|STEPSOK|{}|71", slotInput);
+        return true;
+    }
+
+    static bool HandleUiCommitCommand(ChatHandler* handler, char const* args)
+    {
+        Player* player = GetPlayer(handler);
+        if (!player)
+            return false;
+
+        unsigned int slotInput = 0;
+        if (!ParseSlot(args, slotInput))
+        {
+            SendUiError(handler, "Usage: .autotalent ui commit <1|2>");
+            return true;
+        }
+
+        uint32 charged = 0;
+        std::string error;
+        if (!sAutoTalentMgr->CommitPersonalBuildDraft(player, uint8(slotInput - 1), charged, error))
+        {
+            SendUiError(handler, error);
+            return true;
+        }
+
+        AutoTalentPersonalBuildInfo info = sAutoTalentMgr->GetPersonalBuildInfo(player->GetGUID().GetCounter(), uint8(slotInput - 1));
+        handler->PSendSysMessage("ATUI|SAVEOK|{}|{}|{}|{}", slotInput, charged, info.SaveCount, ProtocolSafe(info.Name));
+        if (player->GetActiveSpec() == slotInput - 1)
+            sAutoTalentMgr->HandleReconcileTrigger(player, "personal-build-ui-save");
+        return true;
+    }
+
+    static bool HandleUiCancelCommand(ChatHandler* handler, char const* args)
+    {
+        Player* player = GetPlayer(handler);
+        if (!player)
+            return false;
+
+        unsigned int slotInput = 0;
+        if (!ParseSlot(args, slotInput))
+        {
+            SendUiError(handler, "Usage: .autotalent ui cancel <1|2>");
+            return true;
+        }
+
+        sAutoTalentMgr->CancelPersonalBuildDraft(player->GetGUID().GetCounter(), uint8(slotInput - 1));
+        handler->PSendSysMessage("ATUI|CANCELOK|{}", slotInput);
         return true;
     }
 };

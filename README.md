@@ -4,9 +4,11 @@ Server-side automatic talent leveling for AzerothCore WotLK 3.3.5a.
 
 Players can select a predefined server build for either native dual-talent slot. The active slot is reconciled automatically on login, level-up, spec change, or when assigning a build to the currently active slot. Prebuilt builds are always free.
 
-v0.4 adds the server-side foundation for one personal/custom ordered build per character/spec slot. Personal builds are stored in the characters database, can be assigned independently to Spec 1 or Spec 2, use the same reconciliation engine as prebuilt builds, and can have a server-configurable save price. The future optional client addon will submit the player's ordered 71-point plan through this same manager API.
+v0.4 added one personal/custom ordered build per character/spec slot with server-controlled pricing. v0.5 adds the optional **AutoTalentsUI** 3.3.5a addon: class-trainer buttons, a talent-tree planner, loading/editing an existing personal build, and save submission to the same server-side personal-build engine.
 
-## Commands
+The addon is optional. Players without it retain all prebuilt-build and command functionality.
+
+## Player commands
 
 Prebuilt builds:
 
@@ -15,13 +17,37 @@ Prebuilt builds:
 - `.autotalent set <1|2> <buildId>`
 - `.autotalent clear <1|2>`
 
-Personal-build test commands:
+Personal-build test/admin-friendly commands:
 
-- `.autotalent custom price <1|2>` - show the price of the next successful personal-build save for that slot.
-- `.autotalent custom clone <1|2> <prebuiltBuildId> [name]` - copy a valid prebuilt 71-point sequence into the slot's personal build, charge the configured save price, select it, and reconcile immediately if the slot is active.
-- `.autotalent custom use <1|2>` - select the already-saved personal build for that slot without charging a save fee.
+- `.autotalent custom price <1|2>`
+- `.autotalent custom clone <1|2> <prebuiltBuildId> [name]`
+- `.autotalent custom use <1|2>`
 
-`custom clone` is primarily a v0.4 server-infrastructure test command. The planned addon will replace cloning with a native-style talent planner and call `SavePersonalBuild()` with the player's ordered choices.
+The `.autotalent ui ...` command family is the transport used by the optional addon. It stages a 71-point ordered plan in server memory and commits it only after the complete sequence has arrived.
+
+## Optional AutoTalentsUI addon
+
+Copy:
+
+`client/AutoTalentsUI/`
+
+into the WoW 3.3.5a client's:
+
+`Interface/AddOns/AutoTalentsUI/`
+
+At a normal class trainer the addon adds:
+
+- **Auto Talent Build - Spec 1**
+- **Auto Talent Build - Spec 2** (only when Dual Talent Specialization exists)
+
+The planner uses the client's own Wrath talent data through `GetNumTalentTabs`, `GetTalentTabInfo`, `GetTalentInfo`, and `GetTalentPrereqs`. Talents are displayed in their normal tier/column locations. The exact order of left-clicks becomes the leveling sequence. `Undo Last` deliberately removes only the most recent point so the ordered progression remains deterministic.
+
+The addon communicates with the module using player chat commands and tagged system-message responses. Protocol messages are filtered from the visible chat frame by the addon. The server remains authoritative for price, validation, storage, assignment, and talent application.
+
+For testing the planner without visiting a trainer:
+
+- `/atui 1`
+- `/atui 2`
 
 ## Personal-build pricing
 
@@ -55,7 +81,7 @@ The save counter is maintained per character/spec slot. Switching between an exi
 
 Prebuilt definitions live in the world database. Personal definitions live in the characters database. Both use ordered talent-name/rank steps and are resolved against AzerothCore's loaded 3.3.5 talent/spell data before use.
 
-The server checks personal data for the correct class, exactly 71 contiguous steps, valid talent names/ranks, and sequential ranks before accepting a save. Talent application itself continues to use AzerothCore's native `LearnTalent()` path, so the core remains authoritative when a saved sequence is applied.
+The server requires personal data to contain the correct class, exactly 71 contiguous steps, valid talent names/ranks, and sequential ranks before accepting a save. Talent application itself uses AzerothCore's native `LearnTalent()` path, so the core remains authoritative when a saved sequence is applied.
 
 ## SQL policy
 
