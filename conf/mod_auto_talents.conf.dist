@@ -10,7 +10,7 @@ AutoTalents.Enable = 1
 # AutoTalents.Debug
 #   Writes reconciliation trigger information to the worldserver log.
 #   Default: 0
-AutoTalents.Debug = 1
+AutoTalents.Debug = 0
 
 # AutoTalents.LoginMessage
 #   Shows a short module-enabled message when a player logs in.
@@ -32,13 +32,13 @@ AutoTalents.CustomBuilds.Enable = 1
 #   1 = linear:     BaseCost + (previous successful saves * CostIncrease)
 #   2 = multiplier: BaseCost * (CostMultiplier ^ previous successful saves)
 #   Default: 0
-AutoTalents.CustomBuilds.CostMode = 1
+AutoTalents.CustomBuilds.CostMode = 0
 
 # AutoTalents.CustomBuilds.BaseCost
 #   Base price in copper for creating/updating a personal build.
 #   10000 copper = 1 gold.
 #   Default: 100000 (10 gold)
-AutoTalents.CustomBuilds.BaseCost = 100000
+AutoTalents.CustomBuilds.BaseCost = 0
 
 # AutoTalents.CustomBuilds.CostIncrease
 #   Added per previous successful save when CostMode = 1.
