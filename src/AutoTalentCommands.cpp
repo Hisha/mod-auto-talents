@@ -9,24 +9,26 @@
 #include <cstdlib>
 #include <string>
 
+using namespace Acore::ChatCommands;
+
 class AutoTalentCommands : public CommandScript
 {
 public:
     AutoTalentCommands() : CommandScript("AutoTalentCommands") { }
 
-    std::vector<ChatCommand> GetCommands() const override
+    ChatCommandTable GetCommands() const override
     {
-        static std::vector<ChatCommand> autoTalentCommandTable =
+        static ChatCommandTable autoTalentCommandTable =
         {
-            { "list",   SEC_PLAYER, false, &HandleListCommand,   "" },
-            { "status", SEC_PLAYER, false, &HandleStatusCommand, "" },
-            { "set",    SEC_PLAYER, false, &HandleSetCommand,    "" },
-            { "clear",  SEC_PLAYER, false, &HandleClearCommand,  "" }
+            { "list",   HandleListCommand,   SEC_PLAYER, Console::No },
+            { "status", HandleStatusCommand, SEC_PLAYER, Console::No },
+            { "set",    HandleSetCommand,    SEC_PLAYER, Console::No },
+            { "clear",  HandleClearCommand,  SEC_PLAYER, Console::No }
         };
 
-        static std::vector<ChatCommand> commandTable =
+        static ChatCommandTable commandTable =
         {
-            { "autotalent", SEC_PLAYER, false, nullptr, "", autoTalentCommandTable }
+            { "autotalent", autoTalentCommandTable }
         };
 
         return commandTable;
