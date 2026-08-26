@@ -31,3 +31,4 @@ CREATE TABLE IF NOT EXISTS `auto_talent_personal_build_step` (
   PRIMARY KEY (`guid`, `spec_slot`, `sequence`),
   KEY `idx_auto_talent_personal_step_owner` (`guid`, `spec_slot`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+

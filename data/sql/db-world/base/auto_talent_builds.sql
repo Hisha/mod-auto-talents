@@ -2281,3 +2281,4 @@ INSERT INTO `auto_talent_build_step` (`build_id`, `sequence`, `talent_name`, `ra
 (1103, 69, 'Moonglow', 3),
 (1103, 70, 'Nature''s Majesty', 1),
 (1103, 71, 'Nature''s Majesty', 2);
+
