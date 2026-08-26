@@ -11,7 +11,7 @@ AutoTalents.Enable = 1
 #   Writes reconciliation trigger information to the worldserver log.
 #   This is useful while the module is under development.
 #   Default: 0
-AutoTalents.Debug = 0
+AutoTalents.Debug = 1
 
 # AutoTalents.LoginMessage
 #   Shows a short module-enabled message when a player logs in.
