@@ -1,0 +1,7 @@
+AC_ADD_SCRIPT("${CMAKE_CURRENT_LIST_DIR}/src/AutoTalentMgr.cpp")
+AC_ADD_SCRIPT("${CMAKE_CURRENT_LIST_DIR}/src/AutoTalentMgr.h")
+AC_ADD_SCRIPT("${CMAKE_CURRENT_LIST_DIR}/src/AutoTalentPlayerScript.cpp")
+AC_ADD_SCRIPT("${CMAKE_CURRENT_LIST_DIR}/src/AutoTalentWorldScript.cpp")
+AC_ADD_SCRIPT("${CMAKE_CURRENT_LIST_DIR}/src/AutoTalentCommands.cpp")
+AC_ADD_SCRIPT_LOADER("AutoTalents" "${CMAKE_CURRENT_LIST_DIR}/src/loader.h")
+AC_ADD_CONFIG_FILE("${CMAKE_CURRENT_LIST_DIR}/conf/mod_auto_talents.conf.dist")

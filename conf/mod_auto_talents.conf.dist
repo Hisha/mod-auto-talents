@@ -1,0 +1,19 @@
+#
+# mod-auto-talents
+#
+
+# AutoTalents.Enable
+#   Enables the module.
+#   Default: 1
+AutoTalents.Enable = 1
+
+# AutoTalents.Debug
+#   Writes reconciliation trigger information to the worldserver log.
+#   This is useful while the module is under development.
+#   Default: 0
+AutoTalents.Debug = 0
+
+# AutoTalents.LoginMessage
+#   Shows a short module-enabled message when a player logs in.
+#   Default: 0
+AutoTalents.LoginMessage = 0
