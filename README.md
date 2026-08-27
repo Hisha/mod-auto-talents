@@ -1,56 +1,122 @@
 # mod-auto-talents
 
-Server-side automatic talent leveling for AzerothCore WotLK 3.3.5a.
+Automatic talent leveling and personal talent loadouts for AzerothCore WotLK 3.3.5a.
 
-Players can select a predefined server build for either native dual-talent slot. The active slot is reconciled automatically on login, level-up, spec change, or when assigning a build to the currently active slot. Prebuilt builds are always free.
+`mod-auto-talents` lets players assign an ordered talent build to either native talent specialization. As the character levels, the module automatically spends newly available talent points in the saved order. When the player changes dual-spec slots, logs in, or otherwise needs reconciliation, the module applies the build appropriate to the active slot and current level.
 
-v0.4 added one personal/custom ordered build per character/spec slot with server-controlled pricing. v0.5 added the optional **AutoTalentsUI** 3.3.5a companion addon and personal talent planner. v0.6 adds a server-backed trainer manager protocol so the addon can display and change prebuilt, personal, or disabled assignments without hard-coded build IDs.
+The module ships with server-controlled prebuilt leveling builds for every class/spec and also supports one personal 71-point build per character/spec slot.
 
-The addon is optional. Players without it retain all prebuilt-build and command functionality.
+## Companion addon
+
+For the full in-game graphical workflow, install the optional **AutoTalentsUI** companion addon:
+
+https://github.com/Hisha/AutoTalentsUI
+
+The addon is optional. Players without it can still use the server-provided prebuilt builds through `.autotalent` commands.
+
+With AutoTalentsUI installed, a class trainer's normal gossip menu gains the native-looking option:
+
+> I wish to adjust my personal talent build(s).
+
+Selecting it opens the Auto Talents manager directly. Players do not need to enter the trainer's skill list first.
+
+The manager allows the player to:
+
+- view the current Auto Talents assignment for each available native talent spec;
+- select one of the server-provided prebuilt leveling builds;
+- create or edit a personal talent build with the graphical talent planner;
+- switch back to an already-saved personal build without paying another save fee;
+- disable Auto Talents for an individual spec slot.
+
+Talent Spec 2 is exposed by the addon after Dual Talent Specialization is unlocked.
+
+## Features
+
+- Automatic talent spending while leveling.
+- Independent assignments for native Talent Spec 1 and Talent Spec 2.
+- Automatic reconciliation on login, level-up, spec change, and assignment change.
+- Server-controlled prebuilt leveling builds for every WotLK class/spec.
+- One personal/custom ordered 71-point build per character/spec slot.
+- Configurable personal-build pricing.
+- Server-side validation of all prebuilt and personal talent sequences.
+- Optional graphical 3.3.5a companion addon.
+- No client patch required.
+
+## Installation
+
+Clone the module into the AzerothCore `modules` directory:
+
+```bash
+cd ~/azerothcore-wotlk/modules
+git clone https://github.com/Hisha/mod-auto-talents.git
+```
+
+Reconfigure/rebuild AzerothCore as required by your installation, install the rebuilt server, and restart `worldserver`.
+
+The module uses AzerothCore's module CMake hooks to install:
+
+```text
+conf/mod_auto_talents.conf.dist
+```
+
+into the normal module configuration location.
+
+### SQL
+
+The module ships complete base SQL definitions under:
+
+```text
+data/sql/db-world/base/auto_talent_builds.sql
+data/sql/db-characters/base/auto_talent_characters.sql
+```
+
+These contain the current table definitions and seed data used by the module.
+
+Distributed SQL intentionally uses complete `CREATE TABLE` definitions and seed operations rather than maintaining a permanent chain of `ALTER TABLE` migrations.
 
 ## Player commands
 
-Prebuilt builds:
+### Prebuilt builds
 
-- `.autotalent list`
-- `.autotalent status`
-- `.autotalent set <1|2> <buildId>`
-- `.autotalent clear <1|2>`
+```text
+.autotalent list
+.autotalent status
+.autotalent set <1|2> <buildId>
+.autotalent clear <1|2>
+```
 
-Personal-build test/admin-friendly commands:
+### Personal-build utility commands
 
-- `.autotalent custom price <1|2>`
-- `.autotalent custom clone <1|2> <prebuiltBuildId> [name]`
-- `.autotalent custom use <1|2>`
+```text
+.autotalent custom price <1|2>
+.autotalent custom clone <1|2> <prebuiltBuildId> [name]
+.autotalent custom use <1|2>
+```
 
-The `.autotalent ui ...` command family is the transport used by the optional addon. It stages a 71-point ordered plan in server memory and commits it only after the complete sequence has arrived.
-
-## Optional AutoTalentsUI addon
-
-AutoTalentsUI is distributed separately from the server module. At a normal class trainer it adds a single **Auto Talents** button. The manager opened from that button receives the player's available prebuilt builds and current Spec 1 / Spec 2 assignments from the server. Players can select a free prebuilt build, edit/use the slot's saved personal build, or disable Auto Talents for that slot. Spec 2 is only shown by the addon after Dual Talent Specialization is unlocked.
-
-The personal planner uses the client's own Wrath talent data through `GetNumTalentTabs`, `GetTalentTabInfo`, `GetTalentInfo`, and `GetTalentPrereqs`. The exact order of planned points becomes the leveling sequence.
-
-The addon communicates with the module using player chat commands and tagged system-message responses. Protocol messages are filtered from the visible chat frame by the addon. The server remains authoritative for available prebuilt builds, assignment, price, validation, storage, and talent application.
-
-Convenience/testing commands:
-
-- `/atui` opens the assignment manager.
-- `/atui 1` opens the Spec 1 personal planner directly.
-- `/atui 2` opens the Spec 2 personal planner directly.
+The `.autotalent ui ...` command family is an internal transport used by AutoTalentsUI. The server remains authoritative for available builds, assignments, pricing, validation, storage, and talent application.
 
 ## Personal-build pricing
 
-Prebuilt build selection is always free. Creating or updating a personal build uses settings in `mod_auto_talents.conf`:
+Prebuilt build selection is always free.
 
-- `AutoTalents.CustomBuilds.Enable`
-- `AutoTalents.CustomBuilds.CostMode` (`0` flat, `1` linear, `2` multiplier)
-- `AutoTalents.CustomBuilds.BaseCost`
-- `AutoTalents.CustomBuilds.CostIncrease`
-- `AutoTalents.CustomBuilds.CostMultiplier`
-- `AutoTalents.CustomBuilds.MaxCost`
+Creating or updating a personal build uses these settings in `mod_auto_talents.conf`:
 
-The save counter is maintained per character/spec slot. Switching between an existing personal build and a prebuilt build does not increase the counter and does not cost money; only a successful personal-build create/update does.
+```text
+AutoTalents.CustomBuilds.Enable
+AutoTalents.CustomBuilds.CostMode
+AutoTalents.CustomBuilds.BaseCost
+AutoTalents.CustomBuilds.CostIncrease
+AutoTalents.CustomBuilds.CostMultiplier
+AutoTalents.CustomBuilds.MaxCost
+```
+
+`AutoTalents.CustomBuilds.CostMode` supports:
+
+- `0` - flat cost;
+- `1` - linear increase per successful save;
+- `2` - multiplier increase per successful save.
+
+The successful-save counter is maintained per character/spec slot. Switching between an existing personal build and a prebuilt build does not increase the counter and does not cost money. Only a successful personal-build create/update is charged.
 
 ## Built-in build IDs
 
@@ -67,12 +133,68 @@ The save counter is maintained per character/spec slot. Switching between an exi
 | Warlock | 901 Affliction, 902 Demonology, 903 Destruction |
 | Druid | 1101 Balance, 1102 Feral, 1103 Restoration |
 
-## Build data
+## Build data and validation
 
-Prebuilt definitions live in the world database. Personal definitions live in the characters database. Both use ordered talent-name/rank steps and are resolved against AzerothCore's loaded 3.3.5 talent/spell data before use.
+Prebuilt definitions live in the world database. Personal definitions live in the characters database.
 
-The server requires personal data to contain the correct class, exactly 71 contiguous steps, valid talent names/ranks, and sequential ranks before accepting a save. Talent application itself uses AzerothCore's native `LearnTalent()` path, so the core remains authoritative when a saved sequence is applied.
+Both use ordered talent-name/rank steps and are resolved against AzerothCore's loaded WotLK 3.3.5a talent/spell data before use.
 
-## SQL policy
+For personal builds, the server validates the character class, exactly 71 contiguous ordered steps, valid talent names/ranks, sequential ranks, tree requirements, and prerequisites before accepting the save.
 
-Distributed SQL files contain complete current `CREATE TABLE` definitions and seed data implemented with `DELETE` / `INSERT`. Permanent upgrade chains containing `ALTER TABLE` are intentionally not shipped.
+Talent application uses AzerothCore's native talent-learning path so the core remains authoritative when a sequence is applied.
+
+## AutoTalentsUI protocol
+
+AutoTalentsUI communicates with the module using player commands and tagged system-message responses. Protocol messages are filtered from the player's normal chat display by the addon.
+
+The personal planner stages the ordered build in server memory while it is transmitted. The saved personal build is committed only after the complete sequence has arrived and passed server validation, preventing partial saves.
+
+## Configuration
+
+Main settings:
+
+```text
+AutoTalents.Enable
+AutoTalents.Debug
+AutoTalents.LoginMessage
+AutoTalents.CustomBuilds.Enable
+AutoTalents.CustomBuilds.CostMode
+AutoTalents.CustomBuilds.BaseCost
+AutoTalents.CustomBuilds.CostIncrease
+AutoTalents.CustomBuilds.CostMultiplier
+AutoTalents.CustomBuilds.MaxCost
+```
+
+See `conf/mod_auto_talents.conf.dist` for descriptions and defaults.
+
+## AzerothCore Catalogue
+
+This repository is intended to be discoverable through the AzerothCore module catalogue.
+
+The current AzerothCore catalogue indexes GitHub repositories using the `azerothcore-module` topic. After publishing the repository, add this GitHub repository topic:
+
+```text
+azerothcore-module
+```
+
+On GitHub, open the repository page, choose **Manage topics**, add `azerothcore-module`, and save.
+
+AzerothCore catalogue:
+
+https://www.azerothcore.org/catalogue.html
+
+Catalogue submission/help:
+
+https://www.azerothcore.org/catalogue.html#/how-to
+
+Adding an `icon.png` to the repository root is also recommended by AzerothCore so the module has an image in catalogue listings/details.
+
+## Related project
+
+**AutoTalentsUI** - optional World of Warcraft 3.3.5a graphical companion addon:
+
+https://github.com/Hisha/AutoTalentsUI
+
+## License
+
+See [LICENSE](LICENSE).
