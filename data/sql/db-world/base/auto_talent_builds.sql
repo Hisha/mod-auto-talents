@@ -884,7 +884,7 @@ INSERT INTO `auto_talent_build_step` (`build_id`, `sequence`, `talent_name`, `ra
 (403, 4, 'Relentless Strikes', 4),
 (403, 5, 'Relentless Strikes', 5),
 (403, 6, 'Camouflage', 1),
-(403, 6, 'Camouflage', 2),
+(403, 7, 'Camouflage', 2),
 (403, 8, 'Camouflage', 3),
 (403, 9, 'Opportunity', 1),
 (403, 10, 'Opportunity', 2),
